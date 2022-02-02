@@ -1,5 +1,5 @@
 # Parallel_Zarr_Reader
-
+Note: cJSON and c-blosc2 are required
 # MATLAB USAGE
 
 The mex files can be called directly from MATLAB once added to the MATLAB path.
