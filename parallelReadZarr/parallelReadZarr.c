@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <dirent.h>
-#include <blosc2.h>
-#include <cjson/cJSON.h>
+#include <cBlosc2/include/blosc2.h>
+#include <cJSON/include/cjson/cJSON.h>
 #include <omp.h>
 #include "mex.h"
 
