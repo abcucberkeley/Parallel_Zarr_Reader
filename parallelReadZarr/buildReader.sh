@@ -21,13 +21,13 @@ mkdir $BASEDIR/$CBLOSC2/build
 mkdir $BASEDIR/$CJSON/build
 cd $BASEDIR/$CBLOSC2/build
 cmake -DCMAKE_INSTALL_PREFIX=$CBLOSC2PREFIX ..
-make
+make -j
 make install
 cd ../../$CJSON/build
 cmake -DCMAKE_INSTALL_PREFIX=$CJSONPREFIX ..
-make
+make -j
 make install
 cd ../..
 rm -rf $CBLOSC2
 rm -rf $CJSON
-export PATH=":${CBLOSC2PREFIX}/lib64:${CJSONPREFIX}/lib64:${CBLOSC2PREFIX}/lib:${CJSONPREFIX}/lib:${CBLOSC2PREFIX}:${CJSONPREFIX}:${PATH}"
+#export PATH=":${CBLOSC2PREFIX}/lib64:${CJSONPREFIX}/lib64:${CBLOSC2PREFIX}/lib:${CJSONPREFIX}/lib:${CBLOSC2PREFIX}:${CJSONPREFIX}:${PATH}"
