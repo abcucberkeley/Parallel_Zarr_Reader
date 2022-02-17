@@ -10,9 +10,9 @@
 
 const char fileSep =
 #ifdef _WIN32
-        '\\';
+    '\\';
 #else
-'/';
+    '/';
 #endif
 
 void* mallocDynamic(uint64_t x, uint64_t bits){
@@ -46,7 +46,7 @@ struct chunkAxisVals getChunkAxisVals(char* fileName){
     struct chunkAxisVals cAV;
     char* copy = strdup(fileName);
     char* token;
-    
+
     token = strtok (copy,".");
     cAV.x = atoi(token);
     token = strtok (NULL, ".");
@@ -64,7 +64,7 @@ struct chunkInfo getChunkInfo(char* folderName){
     struct chunkInfo cI;
     cI.numChunks = 0;
     cI.chunkNames = NULL;
-    
+
     dirp = opendir(folderName); /* There should be error handling after this */
     if(!dirp){
         printf("Failed to open dir\n");
@@ -111,22 +111,22 @@ void setShapeFromJSON(cJSON *json, uint64_t *x, uint64_t *y, uint64_t *z){
 }
 
 void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,uint64_t *chunkZSize,char* dtype,uint64_t *shapeX,uint64_t *shapeY,uint64_t *shapeZ){
-    
+
     char* zArray = ".zarray";
     char* fnFull = (char*)malloc(strlen(fileName)+9);
     fnFull[0] = '\0';
     char fileSepS[2];
     fileSepS[0] = fileSep;
     fileSepS[1] = '\0';
-    
+
     strcat(fnFull,fileName);
     strcat(fnFull,fileSepS);
     strcat(fnFull,zArray);
-    
+
     FILE *fileptr = fopen(fnFull, "rb");
     if(!fileptr) mexErrMsgIdAndTxt("zarr:inputError","Failed to open JSON File: %s\n",fnFull);
     free(fnFull);
-    
+
     fseek(fileptr, 0, SEEK_END);
     long filelen = ftell(fileptr);
     rewind(fileptr);
@@ -135,7 +135,7 @@ void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,
     fclose(fileptr);
     cJSON *json = cJSON_ParseWithLength(buffer,filelen);
     uint8_t flags[3] = {0,0,0};
-    
+
     while(!(flags[0] && flags[1] && flags[2])){
         if(!json->string){
             json = json->child;
@@ -162,12 +162,12 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
     char fileSepS[2];
     fileSepS[0] = fileSep;
     fileSepS[1] = '\0';
-    
+
     /* Initialize the Blosc compressor */
     int32_t numWorkers = omp_get_max_threads();
     blosc_init();
     blosc_set_nthreads(numWorkers);
-    
+
     struct chunkInfo cI = getChunkInfo(folderName);
     if(!cI.chunkNames) mexErrMsgIdAndTxt("zarr:inputError","File \"%s\" cannot be opened",folderName);
     int32_t batchSize = (cI.numChunks-1)/numWorkers+1;
@@ -180,18 +180,18 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
         char *buffer = NULL;
         for(int64_t f = w*batchSize; f < (w+1)*batchSize; f++){
             if(f>=cI.numChunks) break;
-            
+
             //malloc +2 for null term and filesep
             char *fileName = malloc(strlen(folderName)+strlen(cI.chunkNames[f])+2);
             fileName[0] = '\0';
             strcat(fileName,folderName);
             strcat(fileName,fileSepS);
             strcat(fileName,cI.chunkNames[f]);
-            
+
             FILE *fileptr = fopen(fileName, "rb");
             if(!fileptr) mexErrMsgIdAndTxt("zarr:openError","Could not open file: %d\n",fileName);
             free(fileName);
-            
+
             fseek(fileptr, 0, SEEK_END);
             long filelen = ftell(fileptr);
             rewind(fileptr);
@@ -203,9 +203,24 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
             }
             fread(buffer, filelen, 1, fileptr);
             fclose(fileptr);
-            
+
             // Decompress
-            int dsize = blosc2_decompress(buffer, filelen,bufferDest, s*sizeof(uint16_t));
+            int dsize = -1;
+            switch(bits){
+                case 8:
+                    dsize = blosc2_decompress(buffer, filelen,bufferDest, s*sizeof(uint8_t));
+                    break;
+                case 16:
+                    dsize = blosc2_decompress(buffer, filelen,bufferDest, s*sizeof(uint16_t));
+                    break;
+                case 32:
+                    dsize = blosc2_decompress(buffer, filelen,bufferDest, s*sizeof(float));
+                    break;
+                case 64:
+                    dsize = blosc2_decompress(buffer, filelen,bufferDest, s*sizeof(double));
+                    break;
+            }
+            
             //free(buffer);
             if (dsize < 0) mexErrMsgIdAndTxt("blosc2:decompressionError","Decompression error. Error code: %d\n",dsize);
             struct chunkAxisVals cAV = getChunkAxisVals(cI.chunkNames[f]);
@@ -233,7 +248,7 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
                         else if(z<startZ) continue;
                         switch(bits){
                             case 8:
-                                ((uint8_t*)zarr)[x+(y*shapeX)+(z*shapeX*shapeY)] = ((uint8_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)]; 
+                                ((uint8_t*)zarr)[x+(y*shapeX)+(z*shapeX*shapeY)] = ((uint8_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
                                 break;
                             case 16:
                                 ((uint16_t*)zarr)[x+(y*shapeX)+(z*shapeX*shapeY)] = ((uint16_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
@@ -252,20 +267,20 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
         free(bufferDest);
         free(buffer);
     }
-    
+
     #pragma omp parallel for
     for(int i = 0; i < cI.numChunks; i++){
         free(cI.chunkNames[i]);
     }
     free(cI.chunkNames);
-    
+
     /* After using it, destroy the Blosc environment */
     blosc_destroy();
 }
 
 // TODO: FIX MEMORY LEAKS
 void mexFunction(int nlhs, mxArray *plhs[],
-        int nrhs, const mxArray *prhs[])
+                 int nrhs, const mxArray *prhs[])
 {
     uint64_t startX = 0;
     uint64_t startY = 0;
@@ -275,15 +290,15 @@ void mexFunction(int nlhs, mxArray *plhs[],
     uint64_t endZ = 0;
     if(!nrhs) mexErrMsgIdAndTxt("zarr:inputError","This functions requires at least one argument");
     else if(nrhs == 2){
-            if(mxGetN(prhs[1]) != 6) mexErrMsgIdAndTxt("zarr:inputError","Input range is not 6");
-            startX = (uint64_t)*(mxGetPr(prhs[1]))-1;
-            startY = (uint64_t)*((mxGetPr(prhs[1])+1))-1;
-            startZ = (uint64_t)*((mxGetPr(prhs[1])+2))-1;
-            endX = (uint64_t)*((mxGetPr(prhs[1])+3));
-            endY = (uint64_t)*((mxGetPr(prhs[1])+4));
-            endZ = (uint64_t)*((mxGetPr(prhs[1])+5));
-            
-            if(startX+1 < 1 || startY+1 < 1 || startZ+1 < 1) mexErrMsgIdAndTxt("zarr:inputError","Lower bounds must be at least 1");
+        if(mxGetN(prhs[1]) != 6) mexErrMsgIdAndTxt("zarr:inputError","Input range is not 6");
+        startX = (uint64_t)*(mxGetPr(prhs[1]))-1;
+        startY = (uint64_t)*((mxGetPr(prhs[1])+1))-1;
+        startZ = (uint64_t)*((mxGetPr(prhs[1])+2))-1;
+        endX = (uint64_t)*((mxGetPr(prhs[1])+3));
+        endY = (uint64_t)*((mxGetPr(prhs[1])+4));
+        endZ = (uint64_t)*((mxGetPr(prhs[1])+5));
+
+        if(startX+1 < 1 || startY+1 < 1 || startZ+1 < 1) mexErrMsgIdAndTxt("zarr:inputError","Lower bounds must be at least 1");
     }
     else if (nrhs > 2) mexErrMsgIdAndTxt("zarr:inputError","Number of input arguments must be 1 or 2");
     if(!mxIsChar(prhs[0])) mexErrMsgIdAndTxt("zarr:inputError","The first argument must be a string");
@@ -298,9 +313,9 @@ void mexFunction(int nlhs, mxArray *plhs[],
     setValuesFromJSON(folderName,&chunkXSize,&chunkYSize,&chunkZSize,dtype,&shapeX,&shapeY,&shapeZ);
     if(endX > shapeX || endY > shapeY || endZ > shapeZ) mexErrMsgIdAndTxt("zarr:inputError","Upper bound is invalid");
     if(nrhs == 1){
-            endX = shapeX;
-            endY = shapeY;
-            endZ = shapeZ;
+        endX = shapeX;
+        endY = shapeY;
+        endZ = shapeZ;
     }
     uint64_t dim[3];
     shapeX = endX-startX;
@@ -309,7 +324,7 @@ void mexFunction(int nlhs, mxArray *plhs[],
     dim[0] = shapeX;
     dim[1] = shapeY;
     dim[2] = shapeZ;
-    
+
     if(dtype[1] == 'u' && dtype[2] == '1'){
         uint64_t bits = 8;
         plhs[0] = mxCreateNumericArray(3,dim,mxUINT8_CLASS, mxREAL);
@@ -337,9 +352,9 @@ void mexFunction(int nlhs, mxArray *plhs[],
     else{
         mexErrMsgIdAndTxt("tiff:dataTypeError","Data type not suppported");
     }
-    
+
     //plhs[0] = mxCreateNumericArray(3,dim,mxUINT16_CLASS, mxREAL);
     //uint16_t* out = (uint16_t*)mxGetPr(plhs[0]);
-    
-    
+
+
 }
