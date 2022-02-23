@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <dirent.h>
-#include "/global/home/groups/software/sl-7.x86_64/modules/cBlosc/2.0.4/include/blosc2.h"
-#include "/global/home/groups/software/sl-7.x86_64/modules/cJSON/1.7.15/include/cjson/cJSON.h"
+#include "cBlosc2/include/blosc2.h"
+#include "cJSON/include/cjson/cJSON.h"
 #include <omp.h>
 #include "mex.h"
 
