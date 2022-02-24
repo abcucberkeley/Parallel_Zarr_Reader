@@ -270,7 +270,7 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
             }
 
             //printf("w: %d b: %d\n",w,f);
-            for(int64_t x = cAV.x*chunkZSize; x < (cAV.x+1)*chunkXSize; x++){
+            for(int64_t x = cAV.x*chunkXSize; x < (cAV.x+1)*chunkXSize; x++){
                 if(x>=endX) break;
                 else if(x<startX) continue;
                 for(int64_t y = cAV.y*chunkYSize; y < (cAV.y+1)*chunkYSize; y++){
