@@ -110,13 +110,17 @@ void setDTypeFromJSON(cJSON *json, char* dtype){
     dtype[3] = json->valuestring[3];
 }
 
+void setOrderFromJSON(cJSON *json, char* order){
+    *order = json->valuestring[0];
+}
+
 void setShapeFromJSON(cJSON *json, uint64_t *x, uint64_t *y, uint64_t *z){
     *x = json->child->valueint;
     *y = json->child->next->valueint;
     *z = json->child->next->next->valueint;
 }
 
-void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,uint64_t *chunkZSize,char* dtype,uint64_t *shapeX,uint64_t *shapeY,uint64_t *shapeZ){
+void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,uint64_t *chunkZSize,char* dtype,char* order,uint64_t *shapeX,uint64_t *shapeY,uint64_t *shapeZ){
 
     char* zArray = ".zarray";
     char* fnFull = (char*)malloc(strlen(fileName)+9);
@@ -140,9 +144,9 @@ void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,
     fread(buffer, filelen, 1, fileptr);
     fclose(fileptr);
     cJSON *json = cJSON_ParseWithLength(buffer,filelen);
-    uint8_t flags[3] = {0,0,0};
+    uint8_t flags[4] = {0,0,0,0};
 
-    while(!(flags[0] && flags[1] && flags[2])){
+    while(!(flags[0] && flags[1] && flags[2] && flags[3])){
         if(!json->string){
             json = json->child;
             continue;
@@ -155,16 +159,20 @@ void setValuesFromJSON(char* fileName,uint64_t *chunkXSize,uint64_t *chunkYSize,
             setDTypeFromJSON(json, dtype);
             flags[1] = 1;
         }
+        else if(!strcmp(json->string,"order")){
+            setOrderFromJSON(json, order);
+            flags[2] = 1;
+        }
         else if(!strcmp(json->string,"shape")){
             setShapeFromJSON(json, shapeX,shapeY,shapeZ);
-            flags[2] = 1;
+            flags[3] = 1;
         }
         json = json->next;
     }
     cJSON_Delete(json);
 }
 
-void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t startY, uint64_t startZ, uint64_t endX, uint64_t endY,uint64_t endZ,uint64_t chunkXSize,uint64_t chunkYSize,uint64_t chunkZSize,uint64_t shapeX,uint64_t shapeY,uint64_t shapeZ, uint64_t bits){
+void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t startY, uint64_t startZ, uint64_t endX, uint64_t endY,uint64_t endZ,uint64_t chunkXSize,uint64_t chunkYSize,uint64_t chunkZSize,uint64_t shapeX,uint64_t shapeY,uint64_t shapeZ, uint64_t bits, char order){
     char fileSepS[2];
     fileSepS[0] = fileSep;
     fileSepS[1] = '\0';
@@ -176,10 +184,6 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
     
     struct chunkInfo cI = getChunkInfo(folderName, startX, startY, startZ, endX, endY, endZ,chunkXSize,chunkYSize,chunkZSize);
     if(!cI.chunkNames) mexErrMsgIdAndTxt("zarr:inputError","File \"%s\" cannot be opened",folderName);
-    //printf("nWorkers: %d\n",omp_get_max_threads());
-    //mexErrMsgIdAndTxt("zarr:inputError","File \"%s\" cannot be opened",folderName);
-    //printf("numChunks: %d, ChunkSizeX: %d ChunkSizeY: %d ChunkSizeZ: %d \n",cI.numChunks,chunkXSize,chunkYSize,chunkZSize);
-    //mexErrMsgIdAndTxt("zarr:inputError","TESTING");
     
     int32_t batchSize = (cI.numChunks-1)/numWorkers+1;
     uint64_t s = chunkXSize*chunkYSize*chunkZSize;
@@ -253,32 +257,63 @@ void parallelReadZarrMex(void* zarr, char* folderName,uint64_t startX, uint64_t 
             
             //printf("ChunkName: %s\n",cI.chunkNames[f]);
             //printf("w: %d b: %d\n",w,f);
-            for(int64_t x = cAV.x*chunkXSize; x < (cAV.x+1)*chunkXSize; x++){
-                if(x>=endX) break;
-                else if(x<startX) continue;
-                for(int64_t y = cAV.y*chunkYSize; y < (cAV.y+1)*chunkYSize; y++){
-                    if(y>=endY) break;
-                    else if(y<startY) continue;
-                    for(int64_t z = cAV.z*chunkZSize; z < (cAV.z+1)*chunkZSize; z++){
-                        if(z>=endZ) break;
-                        else if(z<startZ) continue;
-                        switch(bits){
-                            case 8:
-                                ((uint8_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint8_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
-                                break;
-                            case 16:
-                                ((uint16_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint16_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
-                                break;
-                            case 32:
-                                ((float*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((float*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
-                                break;
-                            case 64:
-                                ((double*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((double*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
-                                break;
+            if(order == 'F'){
+                for(int64_t z = cAV.z*chunkZSize; z < (cAV.z+1)*chunkZSize; z++){
+                    if(z>=endZ) break;
+                    else if(z<startZ) continue;
+                    for(int64_t y = cAV.y*chunkYSize; y < (cAV.y+1)*chunkYSize; y++){
+                        if(y>=endY) break;
+                        else if(y<startY) continue;
+                        for(int64_t x = cAV.x*chunkXSize; x < (cAV.x+1)*chunkXSize; x++){
+                            if(x>=endX) break;
+                            else if(x<startX) continue;
+                            switch(bits){
+                                case 8:
+                                    ((uint8_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint8_t*)bufferDest)[(x%chunkXSize)+((y%chunkYSize)*chunkXSize)+((z%chunkZSize)*chunkXSize*chunkYSize)];
+                                    break;
+                                case 16:
+                                    ((uint16_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint16_t*)bufferDest)[(x%chunkXSize)+((y%chunkYSize)*chunkXSize)+((z%chunkZSize)*chunkXSize*chunkYSize)];
+                                    break;
+                                case 32:
+                                    ((float*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((float*)bufferDest)[(x%chunkXSize)+((y%chunkYSize)*chunkXSize)+((z%chunkZSize)*chunkXSize*chunkYSize)];
+                                    break;
+                                case 64:
+                                    ((double*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((double*)bufferDest)[(x%chunkXSize)+((y%chunkYSize)*chunkXSize)+((z%chunkZSize)*chunkXSize*chunkYSize)];
+                                    break;
+                            }
                         }
                     }
                 }
             }
+            else if (order == 'C'){
+                for(int64_t x = cAV.x*chunkXSize; x < (cAV.x+1)*chunkXSize; x++){
+                    if(x>=endX) break;
+                    else if(x<startX) continue;
+                    for(int64_t y = cAV.y*chunkYSize; y < (cAV.y+1)*chunkYSize; y++){
+                        if(y>=endY) break;
+                        else if(y<startY) continue;
+                        for(int64_t z = cAV.z*chunkZSize; z < (cAV.z+1)*chunkZSize; z++){
+                            if(z>=endZ) break;
+                            else if(z<startZ) continue;
+                            switch(bits){
+                                case 8:
+                                    ((uint8_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint8_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
+                                    break;
+                                case 16:
+                                    ((uint16_t*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((uint16_t*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
+                                    break;
+                                case 32:
+                                    ((float*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((float*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
+                                    break;
+                                case 64:
+                                    ((double*)zarr)[(x-startX)+((y-startY)*shapeX)+((z-startZ)*shapeX*shapeY)] = ((double*)bufferDest)[(z%chunkZSize)+((y%chunkYSize)*chunkZSize)+((x%chunkXSize)*chunkZSize*chunkYSize)];
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+            
         }
         free(bufferDest);
         free(buffer);
@@ -327,7 +362,8 @@ void mexFunction(int nlhs, mxArray *plhs[],
     uint64_t chunkYSize = 0;
     uint64_t chunkZSize = 0;
     char dtype[4];
-    setValuesFromJSON(folderName,&chunkXSize,&chunkYSize,&chunkZSize,dtype,&shapeX,&shapeY,&shapeZ);
+    char order;
+    setValuesFromJSON(folderName,&chunkXSize,&chunkYSize,&chunkZSize,dtype,&order,&shapeX,&shapeY,&shapeZ);
     if(endX > shapeX || endY > shapeY || endZ > shapeZ) mexErrMsgIdAndTxt("zarr:inputError","Upper bound is invalid");
     if(nrhs == 1){
         endX = shapeX;
@@ -346,32 +382,28 @@ void mexFunction(int nlhs, mxArray *plhs[],
         uint64_t bits = 8;
         plhs[0] = mxCreateNumericArray(3,dim,mxUINT8_CLASS, mxREAL);
         uint8_t* zarr = (uint8_t*)mxGetPr(plhs[0]);
-        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits);
+        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits,order);
     }
     else if(dtype[1] == 'u' && dtype[2] == '2'){
         uint64_t bits = 16;
         plhs[0] = mxCreateNumericArray(3,dim,mxUINT16_CLASS, mxREAL);
         uint16_t* zarr = (uint16_t*)mxGetPr(plhs[0]);
-        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits);
+        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits,order);
     }
     else if(dtype[1] == 'f' && dtype[2] == '4'){
         uint64_t bits = 32;
         plhs[0] = mxCreateNumericArray(3,dim,mxSINGLE_CLASS, mxREAL);
         float* zarr = (float*)mxGetPr(plhs[0]);
-        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits);
+        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits,order);
     }
     else if(dtype[1] == 'f' && dtype[2] == '8'){
         uint64_t bits = 64;
         plhs[0] = mxCreateNumericArray(3,dim,mxDOUBLE_CLASS, mxREAL);
         double* zarr = (double*)mxGetPr(plhs[0]);
-        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits);
+        parallelReadZarrMex((void*)zarr,folderName,startX,startY,startZ,endX,endY,endZ,chunkXSize,chunkYSize,chunkZSize,shapeX,shapeY,shapeZ,bits,order);
     }
     else{
         mexErrMsgIdAndTxt("tiff:dataTypeError","Data type not suppported");
     }
-
-    //plhs[0] = mxCreateNumericArray(3,dim,mxUINT16_CLASS, mxREAL);
-    //uint16_t* out = (uint16_t*)mxGetPr(plhs[0]);
-
 
 }
