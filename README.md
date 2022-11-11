@@ -1,3 +1,6 @@
+# DEPRECATED REPOSITORY
+This repository is now deprecated. Please use https://github.com/abcucberkeley/c-zarr for the most up to date version.
+
 # Parallel_Zarr_Reader
 Note: cJSON and c-blosc2 are required
 # MATLAB USAGE
